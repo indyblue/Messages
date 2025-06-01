@@ -23,4 +23,9 @@
         android:icon="@drawable/ic_info_vector"
         android:title="@string/about"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/webserver_status"
+        android:icon="@drawable/ic_schedule_send_vector"
+        android:title="@string/webserver_status_screen"
+        app:showAsAction="never" />
 </menu>

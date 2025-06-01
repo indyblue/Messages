@@ -140,4 +140,10 @@
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
+    <string name="webserver_status_running">Status: Running</string>
+    <string name="webserver_status_stopped">Status: Stopped</string>
+    <string name="webserver_start">Start Server</string>
+    <string name="webserver_stop">Stop Server</string>
+    <string name="webserver_status_screen">Web Server Status</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
 </resources>

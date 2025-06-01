@@ -138,4 +138,5 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.bundles.room)
     ksp(libs.androidx.room.compiler)
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }

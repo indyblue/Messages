@@ -191,6 +191,7 @@ class MainActivity : SimpleActivity() {
                 R.id.show_archived -> launchArchivedConversations()
                 R.id.settings -> launchSettings()
                 R.id.about -> launchAbout()
+                R.id.webserver_status -> launchWebServerStatus()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
@@ -682,6 +683,10 @@ class MainActivity : SimpleActivity() {
             faqItems = faqItems,
             showFAQBeforeMail = true
         )
+    }
+
+    private fun launchWebServerStatus() {
+        startActivity(Intent(applicationContext, WebServerStatusActivity::class.java))
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
