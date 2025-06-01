@@ -20,22 +20,26 @@ import android.content.Context
 import org.fossify.messages.extensions.config
 import android.view.MenuItem
 import org.fossify.messages.extensions.conversationsDB
+import org.fossify.messages.extensions.messagesDB
+import kotlin.reflect.full.memberProperties
+import fi.iki.elonen.NanoHTTPD.IHTTPSession
+import fi.iki.elonen.NanoHTTPD.Response
+import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
 
-class SimpleWebServer(private val context: Context, port: Int) : NanoHTTPD(port) {
+class SimpleWebServer(port: Int, private val handlers: List<(IHTTPSession) -> Response?>) : NanoHTTPD(port) {
     override fun serve(session: IHTTPSession): Response {
         android.util.Log.i("WebServerStatus", "Received request: ${session.uri}")
-        return when (session.uri) {
-            "/test" -> newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
-            "/threads" -> {
-                val conversations = try {
-                    (context as? org.fossify.messages.activities.WebServerStatusActivity)?.getConversationsJson() ?: "[]"
-                } catch (e: Exception) {
-                    "[]"
-                }
-                newFixedLengthResponse(Response.Status.OK, "application/json", conversations)
+
+        // Loop through handlers to find a non-null response
+        for (handler in handlers) {
+            val response = handler(session)
+            if (response != null) {
+                return response
             }
-            else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
+
+        // Fallback to not found
+        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
     }
 }
 
@@ -143,7 +147,12 @@ class WebServerStatusActivity : SimpleActivity() {
     private fun startWebServer() {
         if (webServer == null) {
             android.util.Log.i("WebServerStatus", "Attempting to start web server on port $serverPort")
-            webServer = SimpleWebServer(this, serverPort)
+            val handlers = listOf(
+                ::handleTestEndpoint,
+                ::handleThreadsEndpoint,
+                ::handleThreadEndpoint
+            )
+            webServer = SimpleWebServer(serverPort, handlers)
             try {
                 webServer?.start()
                 android.util.Log.i("WebServerStatus", "Web server started on port $serverPort")
@@ -253,5 +262,49 @@ class WebServerStatusActivity : SimpleActivity() {
             jsonArray.put(obj)
         }
         return jsonArray.toString()
+    }
+
+    private fun handleTestEndpoint(session: IHTTPSession): Response? {
+        return if (session.uri == "/test") {
+            newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
+        } else null
+    }
+
+    private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
+        return if (session.uri == "/threads") {
+            val conversations = try {
+                getConversationsJson()
+            } catch (e: Exception) {
+                "[]"
+            }
+            newFixedLengthResponse(Response.Status.OK, "application/json", conversations)
+        } else null
+    }
+
+    private fun handleThreadEndpoint(session: IHTTPSession): Response? {
+        val threadRegex = Regex("^/thread/(\\d+)$")
+        return threadRegex.matchEntire(session.uri)?.let { match ->
+            val threadId = match.groupValues[1].toLongOrNull() ?: -1
+            val messages = try {
+                val msgs = messagesDB.getThreadMessages(threadId)
+                val jsonArray = org.json.JSONArray()
+                for (msg in msgs) {
+                    val obj = org.json.JSONObject()
+                    msg::class.memberProperties.forEach { prop ->
+                        val name = prop.name
+                        val value = prop.getter.call(msg)
+                        when (value) {
+                            is String, is Number, is Boolean -> obj.put(name, value)
+                            else -> obj.put(name, value?.toString())
+                        }
+                    }
+                    jsonArray.put(obj)
+                }
+                jsonArray.toString()
+            } catch (e: Exception) {
+                "[]"
+            }
+            newFixedLengthResponse(Response.Status.OK, "application/json", messages)
+        }
     }
 }
