@@ -5,28 +5,77 @@
     android:orientation="vertical"
     android:padding="24dp">
 
-    <TextView
-        android:id="@+id/webserver_status_title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Web Server Status"
-        android:textAppearance="@style/TextAppearance.AppCompat.Large"
-        android:layout_gravity="center_horizontal"
-        android:paddingBottom="16dp"/>
-
-    <TextView
-        android:id="@+id/webserver_status_text"
+    <!-- Add a Toolbar for the action bar -->
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/webserver_toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Status: Stopped"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="16dp"/>
+        android:background="?attr/colorPrimary"
+        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+        android:elevation="4dp" />
 
-    <Button
-        android:id="@+id/webserver_toggle_button"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start Server"
-        android:layout_gravity="center_horizontal"/>
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/webserver_status_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Status: Stopped"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+
+        <Button
+            android:id="@+id/webserver_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start Server"
+            android:layout_gravity="center_vertical"/>
+    </LinearLayout>
+
+    <!-- Port row with edit and refresh icon buttons -->
+    <LinearLayout
+        android:id="@+id/webserver_port_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/webserver_port_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Port: 00000"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+
+        <ImageButton
+            android:id="@+id/webserver_port_edit_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            android:contentDescription="Edit Port"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:layout_marginEnd="4dp"
+            android:tint="?attr/colorControlNormal"/>
+
+        <ImageButton
+            android:id="@+id/webserver_port_refresh_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_popup_sync"
+            android:contentDescription="Randomize Port"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:tint="?attr/colorControlNormal"/>
+    </LinearLayout>
 
 </LinearLayout>

@@ -503,10 +503,11 @@ class MainActivity : SimpleActivity() {
         val appIconColor = config.appIconColor
         if (config.lastHandledShortcutColor != appIconColor) {
             val newConversation = getCreateNewContactShortcut(appIconColor)
+            val webServer = getWebServerShortcut(appIconColor)
 
             val manager = getSystemService(ShortcutManager::class.java)
             try {
-                manager.dynamicShortcuts = listOf(newConversation)
+                manager.dynamicShortcuts = listOf(webServer, newConversation)
                 config.lastHandledShortcutColor = appIconColor
             } catch (_: Exception) {
             }
@@ -535,6 +536,28 @@ class MainActivity : SimpleActivity() {
             .build()
     }
 
+    @SuppressLint("NewApi")
+    private fun getWebServerShortcut(appIconColor: Int): ShortcutInfo {
+        val newEvent = getString(R.string.webserver_status_screen)
+        val drawable =
+            AppCompatResources.getDrawable(this, org.fossify.commons.R.drawable.shortcut_plus)
+
+        (drawable as LayerDrawable).findDrawableByLayerId(
+            org.fossify.commons.R.id.shortcut_plus_background
+        ).applyColorFilter(appIconColor)
+
+        val bmp = drawable.convertToBitmap()
+
+        val intent = Intent(this, WebServerStatusActivity::class.java)
+        intent.action = Intent.ACTION_VIEW
+        return ShortcutInfo.Builder(this, "web_server_status")
+            .setShortLabel(newEvent)
+            .setLongLabel(newEvent)
+            .setIcon(Icon.createWithBitmap(bmp))
+            .setIntent(intent)
+            .build()
+    }
+    
     private fun searchTextChanged(text: String, forceUpdate: Boolean = false) {
         if (!binding.mainMenu.isSearchOpen && !forceUpdate) {
             return

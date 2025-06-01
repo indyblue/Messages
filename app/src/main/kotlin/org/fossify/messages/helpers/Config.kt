@@ -143,4 +143,8 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getString(LAST_BLOCKED_KEYWORD_EXPORT_PATH, "")!!
         set(lastBlockedNumbersExportPath) = prefs.edit()
             .putString(LAST_BLOCKED_KEYWORD_EXPORT_PATH, lastBlockedNumbersExportPath).apply()
+
+    var webServerPort: Int
+        get() = prefs.getInt("web_server_port", 23456)
+        set(value) = prefs.edit().putInt("web_server_port", value).apply()
 }
