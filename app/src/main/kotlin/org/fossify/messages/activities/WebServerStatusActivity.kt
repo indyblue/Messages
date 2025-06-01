@@ -25,6 +25,8 @@ import kotlin.reflect.full.memberProperties
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 class SimpleWebServer(port: Int, private val handlers: List<(IHTTPSession) -> Response?>) : NanoHTTPD(port) {
     override fun serve(session: IHTTPSession): Response {
@@ -250,18 +252,35 @@ class WebServerStatusActivity : SimpleActivity() {
         statusText.movementMethod = null
     }
 
-    fun getConversationsJson(): String {
-        val conversations = this.conversationsDB.getNonArchived().sortedByDescending { it.date }
-        val jsonArray = org.json.JSONArray()
-        for (conv in conversations) {
-            val obj = org.json.JSONObject()
-            obj.put("threadId", conv.threadId)
-            obj.put("title", conv.title)
-            obj.put("phoneNumber", conv.phoneNumber)
-            obj.put("date", conv.date)
-            jsonArray.put(obj)
+    private fun <T> tryCatch(action: () -> T): Pair<T?, String?> {
+        return try {
+            Pair(action(), null)
+        } catch (e: Exception) {
+            Pair(null, e.message)
         }
-        return jsonArray.toString()
+    }
+
+    private fun serializeToJsonObj(data: Any?): Any? {
+        when (data) {
+            null -> return null
+            is Collection<*> -> return org.json.JSONArray(data.map { serializeToJsonObj(it) })
+            is Map<*, *> -> return org.json.JSONObject(data.mapValues { serializeToJsonObj(it.value) })
+            is Number, is Boolean, is String -> return data
+            else -> return org.json.JSONObject(
+                data::class.memberProperties.associate { prop ->
+                    prop.name to serializeToJsonObj(prop.getter.call(data))
+                }
+            )
+        }
+    }
+
+    private fun serializeToJson(data: Any?, exception: Exception? = null): String {
+        val (value, error) = exception?.let { Pair(null, it) }
+            ?: tryCatch { serializeToJsonObj(data) }
+        return org.json.JSONObject(mapOf(
+            "value" to value,
+            "error" to error
+        )).toString()
     }
 
     private fun handleTestEndpoint(session: IHTTPSession): Response? {
@@ -272,12 +291,10 @@ class WebServerStatusActivity : SimpleActivity() {
 
     private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
         return if (session.uri == "/threads") {
-            val conversations = try {
-                getConversationsJson()
-            } catch (e: Exception) {
-                "[]"
+            val (conversations, error) = tryCatch {
+                conversationsDB.getNonArchived().sortedByDescending { it.date }
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", conversations)
+            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(conversations, error?.let { Exception(it) }))
         } else null
     }
 
@@ -285,26 +302,13 @@ class WebServerStatusActivity : SimpleActivity() {
         val threadRegex = Regex("^/thread/(\\d+)$")
         return threadRegex.matchEntire(session.uri)?.let { match ->
             val threadId = match.groupValues[1].toLongOrNull() ?: -1
-            val messages = try {
-                val msgs = messagesDB.getThreadMessages(threadId)
-                val jsonArray = org.json.JSONArray()
-                for (msg in msgs) {
-                    val obj = org.json.JSONObject()
-                    msg::class.memberProperties.forEach { prop ->
-                        val name = prop.name
-                        val value = prop.getter.call(msg)
-                        when (value) {
-                            is String, is Number, is Boolean -> obj.put(name, value)
-                            else -> obj.put(name, value?.toString())
-                        }
-                    }
-                    jsonArray.put(obj)
-                }
-                jsonArray.toString()
-            } catch (e: Exception) {
-                "[]"
+            val (messages, error) = tryCatch {
+                messagesDB.getThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
+                    ?: messagesDB.getThreadMessagesFromRecycleBin(threadId).takeIf { !it.isNullOrEmpty() }
+                    ?: messagesDB.getNonRecycledThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
+                    ?: listOf("Empty", threadId)
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", messages)
+            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
         }
     }
 }
