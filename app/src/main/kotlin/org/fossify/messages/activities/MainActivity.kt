@@ -297,6 +297,11 @@ class MainActivity : SimpleActivity() {
         binding.conversationsFab.setOnClickListener {
             launchNewConversation()
         }
+
+        binding.conversationsFab.setOnLongClickListener {
+            launchWebServerStatus(start = true)
+            return@setOnLongClickListener true
+        }
     }
 
     private fun getCachedConversations() {
@@ -708,8 +713,10 @@ class MainActivity : SimpleActivity() {
         )
     }
 
-    private fun launchWebServerStatus() {
-        startActivity(Intent(applicationContext, WebServerStatusActivity::class.java))
+    private fun launchWebServerStatus(start: Boolean = false) {
+        val intent = Intent(applicationContext, WebServerStatusActivity::class.java)
+        intent.putExtra("START_SERVER", start)
+        startActivity(intent)
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)

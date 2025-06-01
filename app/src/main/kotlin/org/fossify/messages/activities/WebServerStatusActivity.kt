@@ -51,8 +51,11 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var portText: TextView
     private lateinit var portEditButton: android.widget.ImageButton
     private lateinit var portRefreshButton: android.widget.ImageButton
-    private var serverRunning = false
-    private var webServer: SimpleWebServer? = null
+    companion object {
+        val serverRunning: Boolean
+            get() = webServer?.isAlive == true
+        var webServer: SimpleWebServer? = null
+    }
     private var serverPort: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,7 +65,6 @@ class WebServerStatusActivity : SimpleActivity() {
         val toolbar = findViewById<androidx.appcompat.widget.Toolbar>(R.id.webserver_toolbar)
         setSupportActionBar(toolbar)
 
-        // Add back arrow to the action bar
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.setDisplayShowHomeEnabled(true)
         supportActionBar?.title = getString(R.string.webserver_status_screen)
@@ -85,6 +87,11 @@ class WebServerStatusActivity : SimpleActivity() {
             setPortAndResetServer(newPort)
         }
 
+        val startServer = intent.getBooleanExtra("START_SERVER", false)
+        if (startServer && !serverRunning) {
+            startWebServer()
+        }
+
         // Initial status update
         if (serverRunning && webServer != null) {
             updateStatusTextRunning()
@@ -92,11 +99,10 @@ class WebServerStatusActivity : SimpleActivity() {
             updateStatusTextStopped()
         }
         toggleButton.setOnClickListener {
-            serverRunning = !serverRunning
             if (serverRunning) {
-                startWebServer()
-            } else {
                 stopWebServer()
+            } else {
+                startWebServer()
             }
         }
     }
@@ -113,7 +119,6 @@ class WebServerStatusActivity : SimpleActivity() {
         if (serverPort == newPort) return
         if (serverRunning) {
             stopWebServer()
-            serverRunning = false
         }
         serverPort = newPort
         applicationContext.config.webServerPort = newPort
@@ -155,25 +160,22 @@ class WebServerStatusActivity : SimpleActivity() {
                 ::handleThreadEndpoint
             )
             webServer = SimpleWebServer(serverPort, handlers)
-            try {
-                webServer?.start()
-                android.util.Log.i("WebServerStatus", "Web server started on port $serverPort")
-                updateStatusTextRunning()
-            } catch (e: IOException) {
-                serverRunning = false
-                val errorMsg = "Failed to start server on port $serverPort: ${e.message}"
-                statusText.text = errorMsg
-                android.util.Log.e("WebServerStatus", errorMsg, e)
-                webServer = null
-                updateStatusTextStopped()
-                return
-            }
+        }
+        try {
+            webServer?.start()
+            android.util.Log.i("WebServerStatus", "Web server started on port $serverPort")
+            updateStatusTextRunning()
+        } catch (e: IOException) {
+            val errorMsg = "Failed to start server on port $serverPort: ${e.message}"
+            statusText.text = errorMsg
+            android.util.Log.e("WebServerStatus", errorMsg, e)
+            updateStatusTextStopped()
+            return
         }
     }
 
     private fun stopWebServer() {
         webServer?.stop()
-        webServer = null
         updateStatusTextStopped()
     }
 
