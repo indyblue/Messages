@@ -19,12 +19,21 @@ import android.content.ClipboardManager
 import android.content.Context
 import org.fossify.messages.extensions.config
 import android.view.MenuItem
+import org.fossify.messages.extensions.conversationsDB
 
-class SimpleWebServer(port: Int) : NanoHTTPD(port) {
+class SimpleWebServer(private val context: Context, port: Int) : NanoHTTPD(port) {
     override fun serve(session: IHTTPSession): Response {
         android.util.Log.i("WebServerStatus", "Received request: ${session.uri}")
         return when (session.uri) {
             "/test" -> newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
+            "/threads" -> {
+                val conversations = try {
+                    (context as? org.fossify.messages.activities.WebServerStatusActivity)?.getConversationsJson() ?: "[]"
+                } catch (e: Exception) {
+                    "[]"
+                }
+                newFixedLengthResponse(Response.Status.OK, "application/json", conversations)
+            }
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
     }
@@ -134,7 +143,7 @@ class WebServerStatusActivity : SimpleActivity() {
     private fun startWebServer() {
         if (webServer == null) {
             android.util.Log.i("WebServerStatus", "Attempting to start web server on port $serverPort")
-            webServer = SimpleWebServer(serverPort)
+            webServer = SimpleWebServer(this, serverPort)
             try {
                 webServer?.start()
                 android.util.Log.i("WebServerStatus", "Web server started on port $serverPort")
@@ -230,5 +239,19 @@ class WebServerStatusActivity : SimpleActivity() {
         toggleButton.text = getString(R.string.webserver_start)
         statusText.setOnClickListener(null)
         statusText.movementMethod = null
+    }
+
+    fun getConversationsJson(): String {
+        val conversations = this.conversationsDB.getNonArchived().sortedByDescending { it.date }
+        val jsonArray = org.json.JSONArray()
+        for (conv in conversations) {
+            val obj = org.json.JSONObject()
+            obj.put("threadId", conv.threadId)
+            obj.put("title", conv.title)
+            obj.put("phoneNumber", conv.phoneNumber)
+            obj.put("date", conv.date)
+            jsonArray.put(obj)
+        }
+        return jsonArray.toString()
     }
 }
