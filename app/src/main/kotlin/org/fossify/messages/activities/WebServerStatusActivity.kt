@@ -1,32 +1,31 @@
 package org.fossify.messages.activities
 
-import android.os.Build
-import android.os.Bundle
-import android.os.StrictMode
-import android.widget.Button
-import android.widget.TextView
-import java.io.IOException
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import org.fossify.messages.R
-import org.fossify.messages.activities.SimpleActivity
-import java.util.concurrent.Executors
-import fi.iki.elonen.NanoHTTPD
-import java.net.InetAddress
-import java.net.ServerSocket
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import org.fossify.messages.extensions.config
+import android.os.Build
+import android.os.Bundle
+import android.os.StrictMode
 import android.view.MenuItem
-import org.fossify.messages.extensions.conversationsDB
-import org.fossify.messages.extensions.messagesDB
-import kotlin.reflect.full.memberProperties
+import android.widget.Button
+import android.widget.TextView
+import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Response
+import fi.iki.elonen.NanoHTTPD.newChunkedResponse
 import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
+import java.net.ServerSocket
+import java.util.concurrent.Executors
+import kotlin.reflect.full.memberProperties
+import org.fossify.messages.R
+import org.fossify.messages.activities.SimpleActivity
+import org.fossify.messages.extensions.config
+import org.fossify.messages.extensions.conversationsDB
+import org.fossify.messages.extensions.messagesDB
 
 class SimpleWebServer(port: Int, private val handlers: List<(IHTTPSession) -> Response?>) : NanoHTTPD(port) {
     override fun serve(session: IHTTPSession): Response {
@@ -157,7 +156,8 @@ class WebServerStatusActivity : SimpleActivity() {
             val handlers = listOf(
                 ::handleTestEndpoint,
                 ::handleThreadsEndpoint,
-                ::handleThreadEndpoint
+                ::handleThreadEndpoint,
+                ::handleMmsAttachmentsEndpoint
             )
             webServer = SimpleWebServer(serverPort, handlers)
         }
@@ -311,6 +311,25 @@ class WebServerStatusActivity : SimpleActivity() {
                     ?: listOf("Empty", threadId)
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
+        }
+    }
+
+    private fun handleMmsAttachmentsEndpoint(session: IHTTPSession): Response? {
+        val threadRegex = Regex("^/attachment/([^/]+)/(.+)$")
+        return threadRegex.matchEntire(session.uri)?.let { match ->
+            // val ctype = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
+            // val uri = java.net.URLDecoder.decode(match.groupValues[2], "UTF-8")
+            val ctype = String(android.util.Base64.decode(match.groupValues[1], android.util.Base64.DEFAULT))
+            val uri = String(android.util.Base64.decode(match.groupValues[2], android.util.Base64.DEFAULT))
+            val (stream, error) = tryCatch {
+                val partUri = android.net.Uri.parse(uri)
+                applicationContext.contentResolver.openInputStream(partUri)
+            }
+            if(stream!=null) {
+                return newChunkedResponse(Response.Status.OK, ctype, stream)
+            } else {
+                newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(null, error?.let { Exception(it) }))
+            }
         }
     }
 }
