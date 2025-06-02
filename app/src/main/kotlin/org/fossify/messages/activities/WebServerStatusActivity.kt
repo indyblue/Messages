@@ -1,13 +1,18 @@
 package org.fossify.messages.activities
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.TextView
 import android.widget.ImageButton
+import androidx.core.app.NotificationCompat
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -89,6 +94,9 @@ class WebServerStatusActivity : SimpleActivity() {
         val startServer = intent.getBooleanExtra("START_SERVER", false)
         if (startServer && !serverRunning) {
             startWebServer()
+        }
+        if (intent.action == "STOP_SERVER") {
+            stopWebServer()
         }
 
         // Initial status update
@@ -196,6 +204,7 @@ class WebServerStatusActivity : SimpleActivity() {
         try {
             webServer?.start()
             updateStatusTextRunning()
+            showServerNotification()
         } catch (e: IOException) {
             updateStatusTextStopped()
         }
@@ -268,5 +277,41 @@ class WebServerStatusActivity : SimpleActivity() {
         toggleButton.text = getString(R.string.webserver_start)
         statusText.setOnClickListener(null)
         statusText.movementMethod = null
+    }
+
+    // Update the showServerNotification method to create a dismissable notification
+    private fun showServerNotification() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "web_server_channel"
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Web Server",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val stopIntent = Intent(this, WebServerStatusActivity::class.java).apply {
+            action = "STOP_SERVER"
+        }
+        val stopPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Web Server Running")
+            .setContentText("Dismiss to stop the server")
+            // .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_messenger)
+            .setAutoCancel(true) // Make the notification dismissable
+            .setDeleteIntent(stopPendingIntent) // Stop the server when dismissed
+            .build()
+
+        notificationManager.notify(1, notification)
     }
 }
