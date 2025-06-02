@@ -78,4 +78,45 @@
             android:tint="?attr/colorControlNormal"/>
     </LinearLayout>
 
+    <!-- API Key row with edit and refresh icon buttons -->
+    <LinearLayout
+        android:id="@+id/webserver_api_key_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/webserver_api_key_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="API Key: ABC123"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+
+        <ImageButton
+            android:id="@+id/webserver_api_key_edit_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            android:contentDescription="Edit API Key"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:layout_marginEnd="4dp"
+            android:tint="?attr/colorControlNormal"/>
+
+        <ImageButton
+            android:id="@+id/webserver_api_key_refresh_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_popup_sync"
+            android:contentDescription="Randomize API Key"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:tint="?attr/colorControlNormal"/>
+    </LinearLayout>
+
 </LinearLayout>

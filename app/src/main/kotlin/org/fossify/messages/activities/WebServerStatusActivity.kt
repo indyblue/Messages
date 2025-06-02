@@ -50,12 +50,18 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var portText: TextView
     private lateinit var portEditButton: android.widget.ImageButton
     private lateinit var portRefreshButton: android.widget.ImageButton
+    private lateinit var apiKeyText: TextView
+    private lateinit var apiKeyEditButton: android.widget.ImageButton
+    private lateinit var apiKeyRefreshButton: android.widget.ImageButton
+
     companion object {
+        val salt = "FQrxNELXwGoN4F4Qs8lYuZaA"
         val serverRunning: Boolean
             get() = webServer?.isAlive == true
         var webServer: SimpleWebServer? = null
     }
     private var serverPort: Int = 0
+    private var apiKey: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,10 +79,16 @@ class WebServerStatusActivity : SimpleActivity() {
         portText = findViewById(R.id.webserver_port_text)
         portEditButton = findViewById(R.id.webserver_port_edit_button)
         portRefreshButton = findViewById(R.id.webserver_port_refresh_button)
+        apiKeyText = findViewById(R.id.webserver_api_key_text)
+        apiKeyEditButton = findViewById(R.id.webserver_api_key_edit_button)
+        apiKeyRefreshButton = findViewById(R.id.webserver_api_key_refresh_button)
 
         // Load port from config
         serverPort = applicationContext.config.webServerPort
         updatePortText()
+
+        apiKey = applicationContext.config.apiKey ?: generateRandomApiKey()
+        updateApiKeyText()
 
         portEditButton.setOnClickListener {
             showEditPortDialog()
@@ -84,6 +96,14 @@ class WebServerStatusActivity : SimpleActivity() {
         portRefreshButton.setOnClickListener {
             val newPort = (20000..30000).random()
             setPortAndResetServer(newPort)
+        }
+
+        apiKeyEditButton.setOnClickListener {
+            showEditApiKeyDialog()
+        }
+        apiKeyRefreshButton.setOnClickListener {
+            val newApiKey = generateRandomApiKey()
+            setApiKey(newApiKey)
         }
 
         val startServer = intent.getBooleanExtra("START_SERVER", false)
@@ -125,8 +145,19 @@ class WebServerStatusActivity : SimpleActivity() {
         updateStatusTextStopped()
     }
 
+    private fun setApiKey(newApiKey: String) {
+        if (apiKey == newApiKey) return
+        apiKey = newApiKey
+        applicationContext.config.apiKey = newApiKey
+        updateApiKeyText()
+    }
+
     private fun updatePortText() {
         portText.text = "Port: $serverPort"
+    }
+
+    private fun updateApiKeyText() {
+        apiKeyText.text = "API Key: $apiKey"
     }
 
     private fun showEditPortDialog() {
@@ -150,10 +181,34 @@ class WebServerStatusActivity : SimpleActivity() {
         dialog.show()
     }
 
+    private fun showEditApiKeyDialog() {
+        val editText = android.widget.EditText(this)
+        editText.inputType = android.text.InputType.TYPE_CLASS_TEXT
+        editText.setText(apiKey)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Set API Key")
+            .setView(editText)
+            .setPositiveButton("OK") { _, _ ->
+                val input = editText.text.toString()
+                setApiKey(input)
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.show()
+    }
+
+    private fun generateRandomApiKey(): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val secureRandom = java.security.SecureRandom()
+        return (1..10).map { chars.random() }.joinToString("")
+    }
+
     private fun startWebServer() {
         if (webServer == null) {
             android.util.Log.i("WebServerStatus", "Attempting to start web server on port $serverPort")
             val handlers = listOf(
+                ::handleTokenEndpoint,
+                ::handleGenerateTokenEndpoint,
                 ::handleTestEndpoint,
                 ::handleThreadsEndpoint,
                 ::handleThreadEndpoint,
@@ -181,7 +236,6 @@ class WebServerStatusActivity : SimpleActivity() {
 
     private fun getDeviceIpAddresses(): List<String> {
         val addresses = mutableSetOf<String>()
-        // Always include 127.0.0.1
         addresses.add("127.0.0.1")
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
@@ -194,20 +248,7 @@ class WebServerStatusActivity : SimpleActivity() {
                     }
                 }
             }
-        } catch (e: Exception) {
-            // Optionally log the exception
-        }
-        if (addresses.isEmpty()) {
-            try {
-                val interfaces = NetworkInterface.getNetworkInterfaces()
-                for (intf in interfaces) {
-                    val addrs = intf.inetAddresses
-                    for (addr in addrs) {
-                        addresses.add("[${intf.displayName}] ${addr.hostAddress}")
-                    }
-                }
-            } catch (_: Exception) {}
-        }
+        } catch (e: Exception) {}
         return addresses.filter { it.isNotBlank() }
     }
 
@@ -224,7 +265,7 @@ class WebServerStatusActivity : SimpleActivity() {
             for (i in ips.indices) {
                 val ip = ips[i]
                 val end = start + ip.length
-                val fullUrl = "http://$ip:$serverPort"
+                val fullUrl = "http://$ip:$serverPort/test?key=$apiKey"
                 val clickable = object : android.text.style.ClickableSpan() {
                     override fun onClick(widget: android.view.View) {
                         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -285,6 +326,72 @@ class WebServerStatusActivity : SimpleActivity() {
         )).toString()
     }
 
+    private fun handleTokenEndpoint(session: IHTTPSession): Response? {
+        val queryParams = session.parameters["key"]
+        val authHeader = session.headers["authorization"]
+
+        val token = when {
+            queryParams != null && queryParams.isNotEmpty() -> queryParams.first()
+            authHeader != null && authHeader.startsWith("Bearer ", ignoreCase = true) -> authHeader.substring(7)
+            else -> null
+        }
+        val valid = token?.let { it == apiKey || validateGeneratedToken(it) } == true
+
+        return if (valid) {
+            null
+        } else {
+            newFixedLengthResponse(Response.Status.UNAUTHORIZED, "text/plain", "Invalid token")
+        }
+    }
+
+    private fun handleGenerateTokenEndpoint(session: IHTTPSession): Response? {
+        val regex = Regex("^/token/(\\d+)$")
+        return regex.matchEntire(session.uri)?.let { match ->
+            val expirationSeconds = match.groupValues[1].toLongOrNull() ?: -1
+            if (expirationSeconds == null || expirationSeconds <= 0) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Invalid expiration time")
+            }
+
+            val expirationEpoch = currentEpoch() + expirationSeconds
+            val hash = calcHash(expirationEpoch)
+
+            val base36Epoch = expirationEpoch.toString(36)
+            val token = "$base36Epoch:$hash"
+            return newFixedLengthResponse(Response.Status.OK, "text/plain", token)
+        }
+    }
+
+    private fun currentEpoch(): Long {
+        val epochSeconds = java.time.LocalDateTime.of(2025, 1, 1, 0, 0)
+            .atZone(java.time.ZoneOffset.UTC)
+            .toEpochSecond()
+        return System.currentTimeMillis() / 1000 - epochSeconds
+    }
+
+    private fun calcHash(token: Any): String {
+        val tokenStr = token.toString()
+        val dataToHash = "$tokenStr:$apiKey:$salt"
+        // MD5 SHA-1 SHA-224 SHA-256 SHA-384 SHA-512
+        return java.security.MessageDigest.getInstance("SHA-512")
+            .digest(dataToHash.toByteArray())
+            .let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+            .substring(0, 6)
+    }
+
+    private fun validateGeneratedToken(token: String): Boolean {
+        val parts = token.split(":")
+        if (parts.size != 2) return false
+
+        val expirationEpoch = parts[0].toLongOrNull(36) ?: return false
+        val providedHash = parts[1]
+
+        // Check if the token is expired
+        val nowEpoch = currentEpoch()
+        if (nowEpoch > expirationEpoch) return false
+
+        return providedHash == calcHash(expirationEpoch)
+    }
+
     private fun handleTestEndpoint(session: IHTTPSession): Response? {
         return if (session.uri == "/test") {
             newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
@@ -292,7 +399,7 @@ class WebServerStatusActivity : SimpleActivity() {
     }
 
     private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/threads") {
+        return if (session.uri == "/thread") {
             val (conversations, error) = tryCatch {
                 conversationsDB.getNonArchived().sortedByDescending { it.date }
             }
