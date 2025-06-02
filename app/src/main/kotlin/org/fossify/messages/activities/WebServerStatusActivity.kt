@@ -3,46 +3,17 @@ package org.fossify.messages.activities
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
-import android.os.StrictMode
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.TextView
-import fi.iki.elonen.NanoHTTPD
-import fi.iki.elonen.NanoHTTPD.IHTTPSession
-import fi.iki.elonen.NanoHTTPD.Response
-import fi.iki.elonen.NanoHTTPD.newChunkedResponse
-import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
 import java.io.IOException
 import java.net.Inet4Address
-import java.net.InetAddress
 import java.net.NetworkInterface
-import java.net.ServerSocket
-import java.util.concurrent.Executors
-import kotlin.reflect.full.memberProperties
 import org.fossify.messages.R
-import org.fossify.messages.activities.SimpleActivity
 import org.fossify.messages.extensions.config
-import org.fossify.messages.extensions.conversationsDB
-import org.fossify.messages.extensions.messagesDB
-
-class SimpleWebServer(port: Int, private val handlers: List<(IHTTPSession) -> Response?>) : NanoHTTPD(port) {
-    override fun serve(session: IHTTPSession): Response {
-        android.util.Log.i("WebServerStatus", "Received request: ${session.uri}")
-
-        // Loop through handlers to find a non-null response
-        for (handler in handlers) {
-            val response = handler(session)
-            if (response != null) {
-                return response
-            }
-        }
-
-        // Fallback to not found
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
-    }
-}
+import org.fossify.messages.webserver.SimpleWebServer
+import org.fossify.messages.webserver.WebServerManager
 
 class WebServerStatusActivity : SimpleActivity() {
     private lateinit var statusText: TextView
@@ -55,11 +26,11 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var apiKeyRefreshButton: android.widget.ImageButton
 
     companion object {
-        val salt = "FQrxNELXwGoN4F4Qs8lYuZaA"
         val serverRunning: Boolean
             get() = webServer?.isAlive == true
-        var webServer: SimpleWebServer? = null
+        var webServer: WebServerManager? = null
     }
+
     private var serverPort: Int = 0
     private var apiKey: String = ""
 
@@ -200,37 +171,28 @@ class WebServerStatusActivity : SimpleActivity() {
     private fun generateRandomApiKey(): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         val secureRandom = java.security.SecureRandom()
-        return (1..10).map { chars.random() }.joinToString("")
+        return (1..10)
+            .map { chars[secureRandom.nextInt(chars.length)] }
+            .joinToString("")
     }
 
     private fun startWebServer() {
-        if (webServer == null) {
-            android.util.Log.i("WebServerStatus", "Attempting to start web server on port $serverPort")
-            val handlers = listOf(
-                ::handleTokenEndpoint,
-                ::handleGenerateTokenEndpoint,
-                ::handleTestEndpoint,
-                ::handleThreadsEndpoint,
-                ::handleThreadEndpoint,
-                ::handleMmsAttachmentsEndpoint
-            )
-            webServer = SimpleWebServer(serverPort, handlers)
-        }
+        if (serverRunning) return
+
+        webServer = WebServerManager(applicationContext, serverPort, apiKey)
         try {
             webServer?.start()
-            android.util.Log.i("WebServerStatus", "Web server started on port $serverPort")
             updateStatusTextRunning()
         } catch (e: IOException) {
-            val errorMsg = "Failed to start server on port $serverPort: ${e.message}"
-            statusText.text = errorMsg
-            android.util.Log.e("WebServerStatus", errorMsg, e)
             updateStatusTextStopped()
-            return
         }
     }
 
     private fun stopWebServer() {
+        if (!serverRunning) return
+
         webServer?.stop()
+        webServer = null
         updateStatusTextStopped()
     }
 
@@ -293,150 +255,5 @@ class WebServerStatusActivity : SimpleActivity() {
         toggleButton.text = getString(R.string.webserver_start)
         statusText.setOnClickListener(null)
         statusText.movementMethod = null
-    }
-
-    private fun <T> tryCatch(action: () -> T): Pair<T?, String?> {
-        return try {
-            Pair(action(), null)
-        } catch (e: Exception) {
-            Pair(null, e.message)
-        }
-    }
-
-    private fun serializeToJsonObj(data: Any?): Any? {
-        when (data) {
-            null -> return null
-            is Collection<*> -> return org.json.JSONArray(data.map { serializeToJsonObj(it) })
-            is Map<*, *> -> return org.json.JSONObject(data.mapValues { serializeToJsonObj(it.value) })
-            is Number, is Boolean, is String -> return data
-            else -> return org.json.JSONObject(
-                data::class.memberProperties.associate { prop ->
-                    prop.name to serializeToJsonObj(prop.getter.call(data))
-                }
-            )
-        }
-    }
-
-    private fun serializeToJson(data: Any?, exception: Exception? = null): String {
-        val (value, error) = exception?.let { Pair(null, it) }
-            ?: tryCatch { serializeToJsonObj(data) }
-        return org.json.JSONObject(mapOf(
-            "value" to value,
-            "error" to error
-        )).toString()
-    }
-
-    private fun handleTokenEndpoint(session: IHTTPSession): Response? {
-        val queryParams = session.parameters["key"]
-        val authHeader = session.headers["authorization"]
-
-        val token = when {
-            queryParams != null && queryParams.isNotEmpty() -> queryParams.first()
-            authHeader != null && authHeader.startsWith("Bearer ", ignoreCase = true) -> authHeader.substring(7)
-            else -> null
-        }
-        val valid = token?.let { it == apiKey || validateGeneratedToken(it) } == true
-
-        return if (valid) {
-            null
-        } else {
-            newFixedLengthResponse(Response.Status.UNAUTHORIZED, "text/plain", "Invalid token")
-        }
-    }
-
-    private fun handleGenerateTokenEndpoint(session: IHTTPSession): Response? {
-        val regex = Regex("^/token/(\\d+)$")
-        return regex.matchEntire(session.uri)?.let { match ->
-            val expirationSeconds = match.groupValues[1].toLongOrNull() ?: -1
-            if (expirationSeconds == null || expirationSeconds <= 0) {
-                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Invalid expiration time")
-            }
-
-            val expirationEpoch = currentEpoch() + expirationSeconds
-            val hash = calcHash(expirationEpoch)
-
-            val base36Epoch = expirationEpoch.toString(36)
-            val token = "$base36Epoch:$hash"
-            return newFixedLengthResponse(Response.Status.OK, "text/plain", token)
-        }
-    }
-
-    private fun currentEpoch(): Long {
-        val epochSeconds = java.time.LocalDateTime.of(2025, 1, 1, 0, 0)
-            .atZone(java.time.ZoneOffset.UTC)
-            .toEpochSecond()
-        return System.currentTimeMillis() / 1000 - epochSeconds
-    }
-
-    private fun calcHash(token: Any): String {
-        val tokenStr = token.toString()
-        val dataToHash = "$tokenStr:$apiKey:$salt"
-        // MD5 SHA-1 SHA-224 SHA-256 SHA-384 SHA-512
-        return java.security.MessageDigest.getInstance("SHA-512")
-            .digest(dataToHash.toByteArray())
-            .let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
-            .substring(0, 6)
-    }
-
-    private fun validateGeneratedToken(token: String): Boolean {
-        val parts = token.split(":")
-        if (parts.size != 2) return false
-
-        val expirationEpoch = parts[0].toLongOrNull(36) ?: return false
-        val providedHash = parts[1]
-
-        // Check if the token is expired
-        val nowEpoch = currentEpoch()
-        if (nowEpoch > expirationEpoch) return false
-
-        return providedHash == calcHash(expirationEpoch)
-    }
-
-    private fun handleTestEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/test") {
-            newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
-        } else null
-    }
-
-    private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/thread") {
-            val (conversations, error) = tryCatch {
-                conversationsDB.getNonArchived().sortedByDescending { it.date }
-            }
-            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(conversations, error?.let { Exception(it) }))
-        } else null
-    }
-
-    private fun handleThreadEndpoint(session: IHTTPSession): Response? {
-        val threadRegex = Regex("^/thread/(\\d+)$")
-        return threadRegex.matchEntire(session.uri)?.let { match ->
-            val threadId = match.groupValues[1].toLongOrNull() ?: -1
-            val (messages, error) = tryCatch {
-                messagesDB.getThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
-                    ?: messagesDB.getThreadMessagesFromRecycleBin(threadId).takeIf { !it.isNullOrEmpty() }
-                    ?: messagesDB.getNonRecycledThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
-                    ?: listOf("Empty", threadId)
-            }
-            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
-        }
-    }
-
-    private fun handleMmsAttachmentsEndpoint(session: IHTTPSession): Response? {
-        val threadRegex = Regex("^/attachment/([^/]+)/(.+)$")
-        return threadRegex.matchEntire(session.uri)?.let { match ->
-            // val ctype = java.net.URLDecoder.decode(match.groupValues[1], "UTF-8")
-            // val uri = java.net.URLDecoder.decode(match.groupValues[2], "UTF-8")
-            val ctype = String(android.util.Base64.decode(match.groupValues[1], android.util.Base64.DEFAULT))
-            val uri = String(android.util.Base64.decode(match.groupValues[2], android.util.Base64.DEFAULT))
-            val (stream, error) = tryCatch {
-                val partUri = android.net.Uri.parse(uri)
-                applicationContext.contentResolver.openInputStream(partUri)
-            }
-            if(stream!=null) {
-                return newChunkedResponse(Response.Status.OK, ctype, stream)
-            } else {
-                newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(null, error?.let { Exception(it) }))
-            }
-        }
     }
 }
