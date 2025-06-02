@@ -95,6 +95,16 @@
             android:text="API Key: ABC123"
             android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
 
+        <Button
+            android:id="@+id/webserver_api_key_visibility_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:text="show"
+            android:contentDescription="Toggle API Key Visibility"
+            android:padding="6dp"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+
         <ImageButton
             android:id="@+id/webserver_api_key_edit_button"
             android:layout_width="36dp"

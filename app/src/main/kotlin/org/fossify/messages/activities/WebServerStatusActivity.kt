@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.MenuItem
 import android.widget.Button
 import android.widget.TextView
+import android.widget.ImageButton
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -19,11 +20,12 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var statusText: TextView
     private lateinit var toggleButton: Button
     private lateinit var portText: TextView
-    private lateinit var portEditButton: android.widget.ImageButton
-    private lateinit var portRefreshButton: android.widget.ImageButton
+    private lateinit var portEditButton: ImageButton
+    private lateinit var portRefreshButton: ImageButton
     private lateinit var apiKeyText: TextView
-    private lateinit var apiKeyEditButton: android.widget.ImageButton
-    private lateinit var apiKeyRefreshButton: android.widget.ImageButton
+    private lateinit var apiKeyEditButton: ImageButton
+    private lateinit var apiKeyRefreshButton: ImageButton
+    private lateinit var apiKeyVisibilityButton: Button
 
     companion object {
         val serverRunning: Boolean
@@ -33,6 +35,7 @@ class WebServerStatusActivity : SimpleActivity() {
 
     private var serverPort: Int = 0
     private var apiKey: String = ""
+    private var isApiKeyVisible: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +56,7 @@ class WebServerStatusActivity : SimpleActivity() {
         apiKeyText = findViewById(R.id.webserver_api_key_text)
         apiKeyEditButton = findViewById(R.id.webserver_api_key_edit_button)
         apiKeyRefreshButton = findViewById(R.id.webserver_api_key_refresh_button)
+        apiKeyVisibilityButton = findViewById(R.id.webserver_api_key_visibility_button)
 
         // Load port from config
         serverPort = applicationContext.config.webServerPort
@@ -75,6 +79,11 @@ class WebServerStatusActivity : SimpleActivity() {
         apiKeyRefreshButton.setOnClickListener {
             val newApiKey = generateRandomApiKey()
             setApiKey(newApiKey)
+        }
+
+        apiKeyVisibilityButton.setOnClickListener {
+            isApiKeyVisible = !isApiKeyVisible
+            updateApiKeyText()
         }
 
         val startServer = intent.getBooleanExtra("START_SERVER", false)
@@ -107,9 +116,7 @@ class WebServerStatusActivity : SimpleActivity() {
 
     private fun setPortAndResetServer(newPort: Int) {
         if (serverPort == newPort) return
-        if (serverRunning) {
-            stopWebServer()
-        }
+        stopWebServer()
         serverPort = newPort
         applicationContext.config.webServerPort = newPort
         updatePortText()
@@ -118,6 +125,7 @@ class WebServerStatusActivity : SimpleActivity() {
 
     private fun setApiKey(newApiKey: String) {
         if (apiKey == newApiKey) return
+        stopWebServer()
         apiKey = newApiKey
         applicationContext.config.apiKey = newApiKey
         updateApiKeyText()
@@ -128,7 +136,12 @@ class WebServerStatusActivity : SimpleActivity() {
     }
 
     private fun updateApiKeyText() {
-        apiKeyText.text = "API Key: $apiKey"
+        apiKeyVisibilityButton.text = "\uD83D\uDC41" // Eye-open UTF-8 glyph
+        if (isApiKeyVisible) {
+            apiKeyText.text = "API Key: $apiKey"
+        } else {
+            apiKeyText.text = "API Key: **********"
+        }
     }
 
     private fun showEditPortDialog() {
