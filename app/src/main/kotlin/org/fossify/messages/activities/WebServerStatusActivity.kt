@@ -71,7 +71,9 @@ class WebServerStatusActivity : SimpleActivity() {
         serverPort = applicationContext.config.webServerPort
         updatePortText()
 
-        apiKey = applicationContext.config.webServerApiKey ?: generateRandomApiKey()
+        apiKey = applicationContext.config.webServerApiKey ?: generateRandomApiKey().also {
+            applicationContext.config.webServerApiKey = it
+        }
         updateApiKeyText()
 
         portEditButton.setOnClickListener {

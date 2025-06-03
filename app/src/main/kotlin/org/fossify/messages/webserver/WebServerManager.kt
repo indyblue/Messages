@@ -8,8 +8,8 @@ import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.newChunkedResponse
 import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
 import java.security.MessageDigest
-import org.fossify.messages.extensions.conversationsDB
-import org.fossify.messages.extensions.messagesDB
+import org.fossify.messages.extensions.getConversations
+import org.fossify.messages.extensions.getMessages
 import org.fossify.messages.webserver.SerializationUtils.serializeToJson
 import org.fossify.messages.webserver.SerializationUtils.tryCatch
 
@@ -124,22 +124,23 @@ class WebServerManager(
     }
 
     private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/thread") {
+        val threadRegex = Regex("^/threads/?(\\d*)$")
+        return threadRegex.matchEntire(session.uri)?.let { match ->
+            val threadId = match.groupValues[1].toLongOrNull()
             val (conversations, error) = tryCatch {
-                context.conversationsDB.getNonArchived().sortedByDescending { it.date }
+                context.getConversations(threadId).sortedByDescending { it.date }
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(conversations, error?.let { Exception(it) }))
-        } else null
+        }
     }
 
     private fun handleThreadEndpoint(session: IHTTPSession): Response? {
-        val threadRegex = Regex("^/thread/(\\d+)$")
+        val threadRegex = Regex("^/thread/(\\d+)(?:/(\\d+))?$")
         return threadRegex.matchEntire(session.uri)?.let { match ->
             val threadId = match.groupValues[1].toLongOrNull() ?: -1
+            val beforeDate = match.groupValues[2].toIntOrNull() ?: -1
             val (messages, error) = tryCatch {
-                context.messagesDB.getThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
-                    ?: context.messagesDB.getThreadMessagesFromRecycleBin(threadId).takeIf { !it.isNullOrEmpty() }
-                    ?: context.messagesDB.getNonRecycledThreadMessages(threadId).takeIf { !it.isNullOrEmpty() }
+                context.getMessages(threadId, true, beforeDate).takeIf { !it.isNullOrEmpty() }
                     ?: listOf("Empty", threadId)
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
