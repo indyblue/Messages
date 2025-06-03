@@ -10,6 +10,7 @@ import fi.iki.elonen.NanoHTTPD.newFixedLengthResponse
 import java.security.MessageDigest
 import org.fossify.messages.extensions.getConversations
 import org.fossify.messages.extensions.getMessages
+import org.fossify.messages.extensions.getSmsDraft
 import org.fossify.messages.webserver.SerializationUtils.serializeToJson
 import org.fossify.messages.webserver.SerializationUtils.tryCatch
 
@@ -124,14 +125,12 @@ class WebServerManager(
     }
 
     private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
-        val threadRegex = Regex("^/threads/?(\\d*)$")
-        return threadRegex.matchEntire(session.uri)?.let { match ->
-            val threadId = match.groupValues[1].toLongOrNull()
+        return if (session.uri == "/thread") {
             val (conversations, error) = tryCatch {
-                context.getConversations(threadId).sortedByDescending { it.date }
+                context.getConversations().sortedByDescending { it.date }
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(conversations, error?.let { Exception(it) }))
-        }
+        } else null
     }
 
     private fun handleThreadEndpoint(session: IHTTPSession): Response? {
@@ -140,8 +139,10 @@ class WebServerManager(
             val threadId = match.groupValues[1].toLongOrNull() ?: -1
             val beforeDate = match.groupValues[2].toIntOrNull() ?: -1
             val (messages, error) = tryCatch {
-                context.getMessages(threadId, true, beforeDate).takeIf { !it.isNullOrEmpty() }
-                    ?: listOf("Empty", threadId)
+                context.getMessages(threadId, true, beforeDate).let { messages ->
+                    if (beforeDate < 0) messages + context.getSmsDraft(threadId)
+                    else messages
+                }
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
         }
