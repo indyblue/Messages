@@ -6,11 +6,11 @@ import kotlin.reflect.full.memberProperties
 
 object SerializationUtils {
 
-    fun <T> tryCatch(action: () -> T): Pair<T?, String?> {
+    fun <T> tryCatch(action: () -> T): Pair<T?, Exception?> {
         return try {
             Pair(action(), null)
         } catch (e: Exception) {
-            Pair(null, e.message)
+            Pair(null, e)
         }
     }
 

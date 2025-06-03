@@ -129,4 +129,22 @@
             android:tint="?attr/colorControlNormal"/>
     </LinearLayout>
 
+
+    <ScrollView
+        android:id="@+id/webserver_log_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <TextView
+            android:id="@+id/webserver_log_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:textSize="14sp"
+            android:scrollbars="vertical"
+            android:background="#000000"/>
+    </ScrollView>
+
 </LinearLayout>

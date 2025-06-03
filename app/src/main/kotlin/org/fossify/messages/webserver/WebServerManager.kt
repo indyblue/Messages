@@ -13,36 +13,34 @@ import org.fossify.messages.extensions.messagesDB
 import org.fossify.messages.webserver.SerializationUtils.serializeToJson
 import org.fossify.messages.webserver.SerializationUtils.tryCatch
 
-class SimpleWebServer(port: Int, private val handlers: List<(IHTTPSession) -> Response?>) : NanoHTTPD(port) {
-    override fun serve(session: IHTTPSession): Response {
-        android.util.Log.i("WebServerStatus", "Received request: ${session.uri}")
-
-        for (handler in handlers) {
-            val response = handler(session)
-            if (response != null) {
-                return response
-            }
-        }
-
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
-    }
-}
-
-class WebServerManager(private val context: Context, private val port: Int, private val apiKey: String) : NanoHTTPD(port) {
+class WebServerManager(
+    private val context: Context,
+    private val port: Int,
+    private val apiKey: String,
+    private val logFunction: (String) -> Unit
+) : NanoHTTPD(port) {
 
     companion object {
         const val salt = "FQrxNELXwGoN4F4Qs8lYuZaA"
     }
 
-    override fun serve(session: IHTTPSession): Response {
-        val handlers = listOf(
+    private var handlers: List<(IHTTPSession) -> Response?> = emptyList()
+
+    override fun start(timeout: Int, daemon: Boolean) {
+        handlers = listOf(
+            ::handleTestEndpoint,
             ::handleTokenEndpoint,
             ::handleGenerateTokenEndpoint,
-            ::handleTestEndpoint,
             ::handleThreadsEndpoint,
             ::handleThreadEndpoint,
-            ::handleMmsAttachmentsEndpoint
+            ::handleMmsAttachmentsEndpoint,
         )
+
+        super.start(timeout, daemon)
+    }
+
+    override fun serve(session: IHTTPSession): Response {
+        logFunction("- ${session.uri}")
 
         for (handler in handlers) {
             val response = handler(session)

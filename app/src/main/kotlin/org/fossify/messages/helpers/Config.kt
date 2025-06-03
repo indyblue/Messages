@@ -148,7 +148,8 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getInt("web_server_port", 23456)
         set(value) = prefs.edit().putInt("web_server_port", value).apply()
 
-    var apiKey: String?
-        get() = prefs.getString("api_key", null)
-        set(value) = prefs.edit().putString("api_key", value).apply()
+    var webServerApiKey: String?
+        get() = prefs.getString("web_server_api_key", null)
+        set(value) = prefs.edit().putString("web_server_api_key", value).apply()
+
 }

@@ -12,13 +12,13 @@ import android.view.MenuItem
 import android.widget.Button
 import android.widget.TextView
 import android.widget.ImageButton
+import android.widget.ScrollView
 import androidx.core.app.NotificationCompat
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import org.fossify.messages.R
 import org.fossify.messages.extensions.config
-import org.fossify.messages.webserver.SimpleWebServer
 import org.fossify.messages.webserver.WebServerManager
 
 class WebServerStatusActivity : SimpleActivity() {
@@ -31,16 +31,19 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var apiKeyEditButton: ImageButton
     private lateinit var apiKeyRefreshButton: ImageButton
     private lateinit var apiKeyVisibilityButton: Button
+    private lateinit var logTextView: TextView
 
     companion object {
         val serverRunning: Boolean
             get() = webServer?.isAlive == true
         var webServer: WebServerManager? = null
+        private const val NOTIFICATION_ID = 1
     }
 
     private var serverPort: Int = 0
     private var apiKey: String = ""
     private var isApiKeyVisible: Boolean = false
+    private var logData: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,12 +65,13 @@ class WebServerStatusActivity : SimpleActivity() {
         apiKeyEditButton = findViewById(R.id.webserver_api_key_edit_button)
         apiKeyRefreshButton = findViewById(R.id.webserver_api_key_refresh_button)
         apiKeyVisibilityButton = findViewById(R.id.webserver_api_key_visibility_button)
-
-        // Load port from config
+        logTextView = findViewById(R.id.webserver_log_text)
+        logData = savedInstanceState?.getString("logData") ?: ""
+        logTextView.text = logData
         serverPort = applicationContext.config.webServerPort
         updatePortText()
 
-        apiKey = applicationContext.config.apiKey ?: generateRandomApiKey()
+        apiKey = applicationContext.config.webServerApiKey ?: generateRandomApiKey()
         updateApiKeyText()
 
         portEditButton.setOnClickListener {
@@ -135,7 +139,7 @@ class WebServerStatusActivity : SimpleActivity() {
         if (apiKey == newApiKey) return
         stopWebServer()
         apiKey = newApiKey
-        applicationContext.config.apiKey = newApiKey
+        applicationContext.config.webServerApiKey = newApiKey
         updateApiKeyText()
     }
 
@@ -200,7 +204,9 @@ class WebServerStatusActivity : SimpleActivity() {
     private fun startWebServer() {
         if (serverRunning) return
 
-        webServer = WebServerManager(applicationContext, serverPort, apiKey)
+        webServer = WebServerManager(applicationContext, serverPort, apiKey) { logMessage ->
+            appendLog(logMessage)
+        }
         try {
             webServer?.start()
             updateStatusTextRunning()
@@ -216,6 +222,10 @@ class WebServerStatusActivity : SimpleActivity() {
         webServer?.stop()
         webServer = null
         updateStatusTextStopped()
+        if (!serverRunning) {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(NOTIFICATION_ID)
+        }
     }
 
     private fun getDeviceIpAddresses(): List<String> {
@@ -312,6 +322,13 @@ class WebServerStatusActivity : SimpleActivity() {
             .setDeleteIntent(stopPendingIntent) // Stop the server when dismissed
             .build()
 
-        notificationManager.notify(1, notification)
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    fun appendLog(text: String) {
+        logData += "$text\n"
+        logTextView.append("$text\n")
+        val scrollView = findViewById<ScrollView>(R.id.webserver_log_scroll)
+        scrollView.post { scrollView.fullScroll(android.view.View.FOCUS_DOWN) }
     }
 }
