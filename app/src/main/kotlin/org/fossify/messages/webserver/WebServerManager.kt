@@ -14,48 +14,74 @@ import org.fossify.messages.extensions.getSmsDraft
 import org.fossify.messages.webserver.SerializationUtils.serializeToJson
 import org.fossify.messages.webserver.SerializationUtils.tryCatch
 
+data class EndpointRequest(
+    val uri: String,
+    val headers: Map<String, String>,
+    val parameters: Map<String, List<String>>
+)
+
+data class EndpointResponse(
+    val status: Response.Status,
+    val contentType: String,
+    val body: Any?,
+    val isChunked: Boolean = false
+)
+
 class WebServerManager(
     private val context: Context,
     private val port: Int,
     private val apiKey: String,
     private val logFunction: (String) -> Unit
 ) : NanoHTTPD(port) {
-
-    companion object {
-        const val salt = "FQrxNELXwGoN4F4Qs8lYuZaA"
-    }
-
-    private var handlers: List<(IHTTPSession) -> Response?> = emptyList()
+    private lateinit var handlers: WebServerHandlers
 
     override fun start(timeout: Int, daemon: Boolean) {
-        handlers = listOf(
-            ::handleTestEndpoint,
-            ::handleTokenEndpoint,
-            ::handleGenerateTokenEndpoint,
-            ::handleThreadsEndpoint,
-            ::handleThreadEndpoint,
-            ::handleMmsAttachmentsEndpoint,
-        )
-
+        handlers = WebServerHandlers(context, apiKey, logFunction)
         super.start(timeout, daemon)
     }
 
     override fun serve(session: IHTTPSession): Response {
         logFunction("- ${session.uri}")
-
-        for (handler in handlers) {
-            val response = handler(session)
-            if (response != null) {
-                return response
+        val req = EndpointRequest(
+            uri = session.uri,
+            headers = session.headers,
+            parameters = session.parameters
+        )
+        for (handler in handlers.handlerList) {
+            val result = handler(req)
+            if (result != null) {
+                return if (result.isChunked && result.body is java.io.InputStream) {
+                    newChunkedResponse(result.status, result.contentType, result.body)
+                } else {
+                    newFixedLengthResponse(result.status, result.contentType, result.body?.toString() ?: "")
+                }
             }
         }
-
         return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
     }
+}
 
-    private fun handleTokenEndpoint(session: IHTTPSession): Response? {
-        val queryParams = session.parameters["key"]
-        val authHeader = session.headers["authorization"]
+class WebServerHandlers(
+    private val context: Context,
+    private val apiKey: String,
+    private val logFunction: (String) -> Unit
+) {
+    companion object {
+        const val salt = "FQrxNELXwGoN4F4Qs8lYuZaA"
+    }
+
+    val handlerList: List<(EndpointRequest) -> EndpointResponse?> = listOf(
+        ::handleTestEndpoint,
+        ::handleTokenEndpoint,
+        ::handleGenerateTokenEndpoint,
+        ::handleThreadsEndpoint,
+        ::handleThreadEndpoint,
+        ::handleMmsAttachmentsEndpoint,
+    )
+
+    fun handleTokenEndpoint(req: EndpointRequest): EndpointResponse? {
+        val queryParams = req.parameters["key"]
+        val authHeader = req.headers["authorization"]
 
         val token = when {
             queryParams != null && queryParams.isNotEmpty() -> queryParams.first()
@@ -67,16 +93,16 @@ class WebServerManager(
         return if (valid) {
             null
         } else {
-            newFixedLengthResponse(Response.Status.UNAUTHORIZED, "text/plain", "Invalid token")
+            EndpointResponse(Response.Status.UNAUTHORIZED, "text/plain", "Invalid token")
         }
     }
 
-    private fun handleGenerateTokenEndpoint(session: IHTTPSession): Response? {
+    fun handleGenerateTokenEndpoint(req: EndpointRequest): EndpointResponse? {
         val regex = Regex("^/token/(\\d+)$")
-        return regex.matchEntire(session.uri)?.let { match ->
+        return regex.matchEntire(req.uri)?.let { match ->
             val expirationSeconds = match.groupValues[1].toLongOrNull() ?: -1
             if (expirationSeconds <= 0) {
-                return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "Invalid expiration time")
+                return EndpointResponse(Response.Status.BAD_REQUEST, "text/plain", "Invalid expiration time")
             }
 
             val expirationEpoch = currentEpoch() + expirationSeconds
@@ -84,7 +110,7 @@ class WebServerManager(
 
             val base36Epoch = expirationEpoch.toString(36)
             val token = "$base36Epoch:$hash"
-            return newFixedLengthResponse(Response.Status.OK, "text/plain", token)
+            EndpointResponse(Response.Status.OK, "text/plain", token)
         }
     }
 
@@ -118,24 +144,28 @@ class WebServerManager(
         return providedHash == calcHash(expirationEpoch)
     }
 
-    private fun handleTestEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/test") {
-            newFixedLengthResponse(Response.Status.OK, "text/plain", "Web server is running!")
+    fun handleTestEndpoint(req: EndpointRequest): EndpointResponse? {
+        return if (req.uri == "/test") {
+            EndpointResponse(Response.Status.OK, "text/plain", "Web server is running!")
         } else null
     }
 
-    private fun handleThreadsEndpoint(session: IHTTPSession): Response? {
-        return if (session.uri == "/thread") {
+    fun handleThreadsEndpoint(req: EndpointRequest): EndpointResponse? {
+        return if (req.uri == "/thread") {
             val (conversations, error) = tryCatch {
                 context.getConversations().sortedByDescending { it.date }
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(conversations, error?.let { Exception(it) }))
+            EndpointResponse(
+                Response.Status.OK,
+                "application/json",
+                serializeToJson(conversations, error?.let { Exception(it) })
+            )
         } else null
     }
 
-    private fun handleThreadEndpoint(session: IHTTPSession): Response? {
+    fun handleThreadEndpoint(req: EndpointRequest): EndpointResponse? {
         val threadRegex = Regex("^/thread/(\\d+)(?:/(\\d+))?$")
-        return threadRegex.matchEntire(session.uri)?.let { match ->
+        return threadRegex.matchEntire(req.uri)?.let { match ->
             val threadId = match.groupValues[1].toLongOrNull() ?: -1
             val beforeDate = match.groupValues[2].toIntOrNull() ?: -1
             val (messages, error) = tryCatch {
@@ -144,13 +174,17 @@ class WebServerManager(
                     else messages
                 }
             }
-            newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(messages, error?.let { Exception(it) }))
+            EndpointResponse(
+                Response.Status.OK,
+                "application/json",
+                serializeToJson(messages, error?.let { Exception(it) })
+            )
         }
     }
 
-    private fun handleMmsAttachmentsEndpoint(session: IHTTPSession): Response? {
+    fun handleMmsAttachmentsEndpoint(req: EndpointRequest): EndpointResponse? {
         val threadRegex = Regex("^/attachment/([^/]+)/(.+)$")
-        return threadRegex.matchEntire(session.uri)?.let { match ->
+        return threadRegex.matchEntire(req.uri)?.let { match ->
             val ctype = String(Base64.decode(match.groupValues[1], Base64.DEFAULT))
             val uri = String(Base64.decode(match.groupValues[2], Base64.DEFAULT))
             val (stream, error) = tryCatch {
@@ -158,9 +192,13 @@ class WebServerManager(
                 context.applicationContext.contentResolver.openInputStream(partUri)
             }
             if (stream != null) {
-                return newChunkedResponse(Response.Status.OK, ctype, stream)
+                return EndpointResponse(Response.Status.OK, ctype, stream, isChunked = true)
             } else {
-                newFixedLengthResponse(Response.Status.OK, "application/json", serializeToJson(null, error?.let { Exception(it) }))
+                EndpointResponse(
+                    Response.Status.OK,
+                    "application/json",
+                    serializeToJson(null, error?.let { Exception(it) })
+                )
             }
         }
     }
