@@ -37,6 +37,43 @@
             android:layout_gravity="center_vertical"/>
     </LinearLayout>
 
+    <!-- WebSocket row with URL and start/stop button -->
+    <LinearLayout
+        android:id="@+id/websocket_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/websocket_url_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="ws://example.com:12345"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"/>
+
+        <ImageButton
+            android:id="@+id/websocket_url_edit_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            android:contentDescription="Edit WebSocket URL"
+            android:scaleType="centerInside"
+            android:padding="6dp"
+            android:layout_marginEnd="4dp"
+            android:tint="?attr/colorControlNormal"/>
+
+        <Button
+            android:id="@+id/websocket_toggle_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Start WebSocket"
+            android:layout_gravity="center_vertical"/>
+    </LinearLayout>
+
     <!-- Port row with edit and refresh icon buttons -->
     <LinearLayout
         android:id="@+id/webserver_port_row"

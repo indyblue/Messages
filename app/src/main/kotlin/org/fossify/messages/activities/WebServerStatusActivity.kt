@@ -20,6 +20,7 @@ import java.net.NetworkInterface
 import org.fossify.messages.R
 import org.fossify.messages.extensions.config
 import org.fossify.messages.webserver.WebServerManager
+import org.fossify.messages.webserver.WebSocketClient
 
 class WebServerStatusActivity : SimpleActivity() {
     private lateinit var statusText: TextView
@@ -32,18 +33,24 @@ class WebServerStatusActivity : SimpleActivity() {
     private lateinit var apiKeyRefreshButton: ImageButton
     private lateinit var apiKeyVisibilityButton: Button
     private lateinit var logTextView: TextView
+    private lateinit var webSocketUrlText: TextView
+    private lateinit var webSocketToggleButton: Button
 
     companion object {
-        val serverRunning: Boolean
+        val webServerRunning: Boolean
             get() = webServer?.isAlive == true
         var webServer: WebServerManager? = null
         private const val NOTIFICATION_ID = 1
+        val webSocketRunning: Boolean
+            get() = webSocketClient?.isAlive == true
+        var webSocketClient: WebSocketClient? = null
     }
 
     private var serverPort: Int = 0
     private var apiKey: String = ""
     private var isApiKeyVisible: Boolean = false
     private var logData: String = ""
+    private var webSocketUrl: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +73,8 @@ class WebServerStatusActivity : SimpleActivity() {
         apiKeyRefreshButton = findViewById(R.id.webserver_api_key_refresh_button)
         apiKeyVisibilityButton = findViewById(R.id.webserver_api_key_visibility_button)
         logTextView = findViewById(R.id.webserver_log_text)
+        webSocketUrlText = findViewById(R.id.websocket_url_text)
+        webSocketToggleButton = findViewById(R.id.websocket_toggle_button)
         logData = savedInstanceState?.getString("logData") ?: ""
         logTextView.text = logData
         serverPort = applicationContext.config.webServerPort
@@ -97,8 +106,40 @@ class WebServerStatusActivity : SimpleActivity() {
             updateApiKeyText()
         }
 
+        webSocketUrl = applicationContext.config.webSocketUrl ?: "ws://example.com:12345"
+        webSocketUrlText.text = webSocketUrl
+        webSocketToggleButton.setOnClickListener {
+            if (webSocketRunning) {
+                stopWebSocket()
+            } else {
+                stopWebServer() // Only one can run at a time
+                startWebSocket()
+            }
+        }
+
+        val webSocketUrlEditButton = findViewById<ImageButton>(R.id.websocket_url_edit_button)
+        webSocketUrlEditButton.setOnClickListener {
+            val editText = android.widget.EditText(this)
+            editText.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            editText.setText(webSocketUrl)
+            val dialog = android.app.AlertDialog.Builder(this)
+                .setTitle("Set WebSocket URL")
+                .setView(editText)
+                .setPositiveButton("OK") { _, _ ->
+                    val input = editText.text.toString()
+                    if (input.isNotBlank()) {
+                        webSocketUrl = input
+                        applicationContext.config.webSocketUrl = input
+                        webSocketUrlText.text = input
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .create()
+            dialog.show()
+        }
+
         val startServer = intent.getBooleanExtra("START_SERVER", false)
-        if (startServer && !serverRunning) {
+        if (startServer && !webServerRunning) {
             startWebServer()
         }
         if (intent.action == "STOP_SERVER") {
@@ -106,13 +147,13 @@ class WebServerStatusActivity : SimpleActivity() {
         }
 
         // Initial status update
-        if (serverRunning && webServer != null) {
+        if (webServerRunning && webServer != null) {
             updateStatusTextRunning()
         } else {
             updateStatusTextStopped()
         }
         toggleButton.setOnClickListener {
-            if (serverRunning) {
+            if (webServerRunning) {
                 stopWebServer()
             } else {
                 startWebServer()
@@ -204,7 +245,7 @@ class WebServerStatusActivity : SimpleActivity() {
     }
 
     private fun startWebServer() {
-        if (serverRunning) return
+        if (webServerRunning) return
 
         webServer = WebServerManager(applicationContext, serverPort, apiKey) { logMessage ->
             appendLog(logMessage)
@@ -219,15 +260,32 @@ class WebServerStatusActivity : SimpleActivity() {
     }
 
     private fun stopWebServer() {
-        if (!serverRunning) return
+        if (!webServerRunning) return
 
         webServer?.stop()
         webServer = null
         updateStatusTextStopped()
-        if (!serverRunning) {
+        if (!webServerRunning) {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(NOTIFICATION_ID)
         }
+    }
+
+    private fun startWebSocket() {
+        if (webSocketRunning) return
+        applicationContext.config.webSocketUrl = webSocketUrl
+        webSocketClient = WebSocketClient(applicationContext, webSocketUrl, apiKey) { logMessage ->
+            appendLog(logMessage)
+        }
+        webSocketClient?.connect()
+        updateStatusTextWebSocketRunning()
+    }
+
+    private fun stopWebSocket() {
+        if (!webSocketRunning) return
+        webSocketClient?.close()
+        webSocketClient = null
+        updateStatusTextStopped()
     }
 
     private fun getDeviceIpAddresses(): List<String> {
@@ -283,10 +341,20 @@ class WebServerStatusActivity : SimpleActivity() {
         toggleButton.text = getString(R.string.webserver_stop)
     }
 
+    private fun updateStatusTextWebSocketRunning() {
+        updatePortText()
+        statusText.text = "WebSocket connected: $webSocketUrl"
+        toggleButton.text = getString(R.string.webserver_start)
+        webSocketToggleButton.text = "Stop WebSocket"
+        statusText.setOnClickListener(null)
+        statusText.movementMethod = null
+    }
+
     private fun updateStatusTextStopped() {
         updatePortText()
         statusText.text = getString(R.string.webserver_status_stopped)
         toggleButton.text = getString(R.string.webserver_start)
+        webSocketToggleButton.text = "Start WebSocket"
         statusText.setOnClickListener(null)
         statusText.movementMethod = null
     }

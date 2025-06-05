@@ -152,4 +152,8 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getString("web_server_api_key", null)
         set(value) = prefs.edit().putString("web_server_api_key", value).apply()
 
+    var webSocketUrl: String?
+        get() = prefs.getString("web_socket_url", null)
+        set(value) = prefs.edit().putString("web_socket_url", value).apply()
+
 }
